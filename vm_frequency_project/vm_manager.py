@@ -90,7 +90,7 @@ if __name__ == "__main__":
     create_parser.add_argument("--memory", type=int, default=2048, help="Memory in MB")
     create_parser.add_argument("--vcpus", type=int, default=2, help="Number of vCPUs")
     create_parser.add_argument("--disk", type=int, default=10, help="Disk size in GB")
-    create_parser.add_argument("--iso", help="Path to ISO image")
+    create_parser.add_argument("--cdrom", help="Path to ISO image")
     
     # Create multiple VMs command
     create_multi_parser = subparsers.add_parser("create-multi", help="Create multiple VMs")
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     create_multi_parser.add_argument("--memory", type=int, default=2048, help="Memory in MB")
     create_multi_parser.add_argument("--vcpus", type=int, default=2, help="Number of vCPUs")
     create_multi_parser.add_argument("--disk", type=int, default=10, help="Disk size in GB")
-    create_multi_parser.add_argument("--iso", help="Path to ISO image")
+    create_multi_parser.add_argument("--cdrom", help="Path to ISO image")
     
     # Clone VM command
     clone_parser = subparsers.add_parser("clone", help="Clone an existing VM")
