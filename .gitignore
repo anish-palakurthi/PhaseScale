@@ -1,0 +1,25 @@
+# Python virtual environment
+vm_workload_prediction/
+
+# Bytecode files
+__pycache__/
+*.py[cod]
+*.so
+
+# Logs and runtime files
+*.log
+*.out
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VSCode and other IDE settings
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment/config files
+.env
