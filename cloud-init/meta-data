@@ -1,2 +1,3 @@
-instance-id: benchmark-vm
-local-hostname: benchmark-vm
+# cloud-init/meta-data
+instance-id: myvm-01
+local-hostname: myvm

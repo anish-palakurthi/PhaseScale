@@ -5,12 +5,43 @@ import argparse
 import subprocess
 import time
 import sys
+import paramiko
+from scp import SCPClient
 
 class VMManager:
     def __init__(self, vm_dir="./vms"):
         self.vm_dir = vm_dir
         os.makedirs(vm_dir, exist_ok=True)
     
+    def create_cloud_vm(self, name, memory, vcpus, disk_size, cloud_img_path, seed_iso_path):
+        vm_disk = os.path.join(self.vm_dir, f"{name}.qcow2")
+
+        # 1. Copy cloud image
+        base_img = os.path.abspath(cloud_img_path)
+
+        # 2. Create overlay disk
+        subprocess.run(
+            f"qemu-img create -f qcow2 -b {base_img} -F qcow2 {vm_disk} {disk_size}G",
+            shell=True, check=True
+        )
+
+        # 3. Launch VM using seed ISO
+        cmd = [
+            "virt-install",
+            "--name", name,
+            "--memory", str(memory),
+            "--vcpus", str(vcpus),
+            "--disk", f"path={vm_disk},format=qcow2",
+            "--disk", f"path={os.path.abspath(seed_iso_path)},device=cdrom,readonly=on",
+            "--os-variant", "ubuntu22.04",
+            "--network", "bridge=virbr0",
+            "--graphics", "none",
+            "--import"
+        ]
+
+        print(f"Creating cloud VM '{name}'...")
+        subprocess.run(cmd, check=True)
+
     def create_vm(self, name, memory, vcpus, disk_size, iso_path=None):
         """Create a new VM"""
         disk_path = os.path.join(self.vm_dir, f"{name}.qcow2")
@@ -42,45 +73,120 @@ class VMManager:
         print(f"Creating VM {name}...")
         subprocess.run(cmd, check=True)
 
-        def clone_vm(self, source_name, target_name):
-            """Clone an existing VM"""
-            cmd = f"virt-clone --original {source_name} --name {target_name} --auto-clone"
-            subprocess.run(cmd, shell=True, check=True)
-            print(f"VM {source_name} cloned to {target_name}")
+    def clone_vm(self, source_name, target_name):
+        """Clone an existing VM"""
+        cmd = f"virt-clone --original {source_name} --name {target_name} --auto-clone"
+        subprocess.run(cmd, shell=True, check=True)
+        print(f"VM {source_name} cloned to {target_name}")
+    
+    def start_vm(self, name):
+        """Start a VM"""
+        result = subprocess.run(f"virsh start {name}", shell=True, stderr=subprocess.PIPE)
+        if b"Domain is already active" in result.stderr:
+            print(f"VM {name} is already running")
+        elif result.returncode != 0:
+            raise subprocess.CalledProcessError(result.returncode, result.args, stderr=result.stderr)
+    
+    def stop_vm(self, name, force=False):
+        """Stop a VM"""
+        if force:
+            cmd = f"virsh destroy {name}"
+        else:
+            cmd = f"virsh shutdown {name}"
         
-        def start_vm(self, name):
-            """Start a VM"""
-            cmd = f"virsh start {name}"
+        subprocess.run(cmd, shell=True, check=True)
+        print(f"VM {name} {'destroyed' if force else 'shutdown'}")
+    
+    def list_vms(self):
+        """List all VMs"""
+        cmd = "virsh list --all"
+        subprocess.run(cmd, shell=True, check=True)
+    
+    def set_vcpu_pinning(self, name, vcpu_map):
+        """Set vCPU pinning for a VM"""
+        for vcpu, pcpu in vcpu_map.items():
+            cmd = f"virsh vcpupin {name} {vcpu} {pcpu}"
             subprocess.run(cmd, shell=True, check=True)
-            print(f"VM {name} started")
-        
-        def stop_vm(self, name, force=False):
-            """Stop a VM"""
-            if force:
-                cmd = f"virsh destroy {name}"
-            else:
-                cmd = f"virsh shutdown {name}"
+            print(f"Pinned vCPU {vcpu} to pCPU {pcpu} for VM {name}")
+    
+    def create_multiple_vms(self, base_name, count, memory, vcpus, disk_size, iso_path=None):
+        """Create multiple VMs with sequential names"""
+        for i in range(count):
+            vm_name = f"{base_name}{i+1}"
+            self.create_vm(vm_name, memory, vcpus, disk_size, iso_path)
+
+    def _create_ssh_client(self, hostname, username="root", key_path="~/.ssh/id_rsa"):
+        key = paramiko.RSAKey.from_private_key_file(os.path.expanduser(key_path))
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname, username=username, pkey=key)
+        return client
+
+    def _get_vm_ip(self, name):
+        import json, re, subprocess
+
+        # 1) Get the domiflist output
+        result = subprocess.run(
+            f"virsh domiflist {name}",
+            shell=True, capture_output=True, text=True
+        )
+        mac = None
+
+        # 2) Find the MAC by looking at the last column of non-header lines
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Interface") or line.startswith("-"):
+                continue
+            parts = line.split()
+            candidate = parts[-1]
+            if re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", candidate):
+                mac = candidate.lower()
+                break
+
+        if not mac:
+            raise Exception(f"MAC address for {name} not found in virsh domiflist output.")
+
+        # 3) Lookup the IP in the lease file
+        with open("/var/lib/libvirt/dnsmasq/virbr0.status") as f:
+            leases = json.load(f)
+        for lease in leases:
+            if lease.get("mac-address", "").lower() == mac:
+                return lease["ip-address"]
+
+        raise Exception(f"No DHCP lease found for MAC {mac}")
+
+
+    def provision_and_run(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
+            from scp import SCPClient
+            ip = self._get_vm_ip(name)
+            print(f"→ Connecting to {name} @ {ip}...")
+
+            client = self._create_ssh_client(ip, username, key_path)
+            scp = SCPClient(client.get_transport())
+
+            print("→ Copying scripts...")
+
+
+            scp.put("../YCSB", recursive=True, remote_path="/tmp/")
+            client.exec_command("sudo mv /tmp/YCSB /opt/")
+
             
-            subprocess.run(cmd, shell=True, check=True)
-            print(f"VM {name} {'destroyed' if force else 'shutdown'}")
-        
-        def list_vms(self):
-            """List all VMs"""
-            cmd = "virsh list --all"
-            subprocess.run(cmd, shell=True, check=True)
-        
-        def set_vcpu_pinning(self, name, vcpu_map):
-            """Set vCPU pinning for a VM"""
-            for vcpu, pcpu in vcpu_map.items():
-                cmd = f"virsh vcpupin {name} {vcpu} {pcpu}"
-                subprocess.run(cmd, shell=True, check=True)
-                print(f"Pinned vCPU {vcpu} to pCPU {pcpu} for VM {name}")
-        
-        def create_multiple_vms(self, base_name, count, memory, vcpus, disk_size, iso_path=None):
-            """Create multiple VMs with sequential names"""
-            for i in range(count):
-                vm_name = f"{base_name}{i+1}"
-                self.create_vm(vm_name, memory, vcpus, disk_size, iso_path)
+            script_path = 'run_redis_vm.sh'
+            if workload == 'mongodb':
+                script_path = 'run_mongodb_vm.sh'
+
+            scp.put(f'vm_benchmark_scripts/{script_path}', "/tmp/")
+            
+
+            print(f"→ Running {workload} benchmark script...")
+            stdin, stdout, stderr = client.exec_command(f"bash /tmp/{script_path}")
+            print(stdout.read().decode())
+            print(stderr.read().decode())
+
+            scp.close()
+            client.close()
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VM Manager")
@@ -124,6 +230,24 @@ if __name__ == "__main__":
     pin_parser = subparsers.add_parser("pin", help="Set vCPU pinning")
     pin_parser.add_argument("name", help="VM name")
     pin_parser.add_argument("mapping", help="vCPU to pCPU mapping (e.g., 0:0,1:1,2:2,3:3)")
+
+
+    cloud_parser = subparsers.add_parser("create-cloud", help="Create a cloud-init-based VM (with prebuilt seed.iso)")
+    cloud_parser.add_argument("name", help="VM name", default="tempVm")
+    cloud_parser.add_argument("--memory", type=int, default=2048)
+    cloud_parser.add_argument("--vcpus", type=int, default=2)
+    cloud_parser.add_argument("--disk", type=int, default=10)
+    cloud_parser.add_argument("--cloud-image", required=True, help="Path to base cloud image")
+    cloud_parser.add_argument("--seed-iso", required=True, help="Path to pre-generated cloud-init seed ISO")
+
+    provision_parser = subparsers.add_parser("provision", help="Provision and run benchmark on a VM")
+    provision_parser.add_argument("name", help="Name of VM to provision")
+    provision_parser.add_argument("--user", default="ubuntu", help="SSH username")
+    provision_parser.add_argument("--key", default="~/.ssh/id_rsa", help="Path to SSH private key")
+    provision_parser.add_argument("--workload", default="redis", help="redis or mongodb")
+
+
+
     
     args = parser.parse_args()
     manager = VMManager()
@@ -140,6 +264,13 @@ if __name__ == "__main__":
         manager.stop_vm(args.name, args.force)
     elif args.command == "list":
         manager.list_vms()
+    elif args.command == "provision":
+        manager.provision_and_run(args.name, args.user, args.key, args.workload)
+    elif args.command == "create-cloud":
+        manager.create_cloud_vm(
+            args.name, args.memory, args.vcpus,
+            args.disk, args.cloud_image, args.seed_iso
+        )
     elif args.command == "pin":
         vcpu_map = {}
         for mapping in args.mapping.split(","):
