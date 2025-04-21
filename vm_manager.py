@@ -127,7 +127,7 @@ class VMManager:
 
         # 1) Get the domiflist output
         result = subprocess.run(
-            f"virsh domiflist {name}",
+            f"sudo virsh domiflist {name}",
             shell=True, capture_output=True, text=True
         )
         mac = None
@@ -244,7 +244,7 @@ if __name__ == "__main__":
     provision_parser.add_argument("name", help="Name of VM to provision")
     provision_parser.add_argument("--user", default="ubuntu", help="SSH username")
     provision_parser.add_argument("--key", default="~/.ssh/id_rsa", help="Path to SSH private key")
-    provision_parser.add_argument("--workload", default="redis", help="redis or mongodb")
+    provision_parser.add_argument("--workload", choices=["redis", "mongodb"], default="redis", help="Type of benchmark to run")
 
 
 
