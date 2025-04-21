@@ -156,6 +156,23 @@ class VMManager:
         raise Exception(f"No DHCP lease found for MAC {mac}")
 
 
+    def destroy_vm(self, name):
+        """Completely remove a VM"""
+        try:
+            subprocess.run(["virsh", "destroy", name], check=True)
+        except subprocess.CalledProcessError:
+            print(f"VM {name} wasn't running or already destroyed")
+
+        subprocess.run(["virsh", "undefine", name], check=True)
+
+        disk_path = os.path.join(self.vm_dir, f"{name}.qcow2")
+        if os.path.exists(disk_path):
+            os.remove(disk_path)
+            print(f"Removed disk {disk_path}")
+
+        print(f"VM {name} fully destroyed.")
+
+
     def provision_and_run(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
             from scp import SCPClient
             ip = self._get_vm_ip(name)
@@ -186,6 +203,36 @@ class VMManager:
             scp.close()
             client.close()
 
+    def provision_vm(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
+        ip = self._get_vm_ip(name)
+        print(f"→ Connecting to {name} @ {ip} for provisioning...")
+
+        client = self._create_ssh_client(ip, username, key_path)
+        scp = SCPClient(client.get_transport())
+
+        print("→ Copying YCSB...")
+        scp.put("../YCSB", recursive=True, remote_path="/tmp/")
+        client.exec_command("sudo mv /tmp/YCSB /opt/")
+
+        script_path = 'run_redis_vm.sh' if workload == 'redis' else 'run_mongodb_vm.sh'
+        scp.put(f'vm_benchmark_scripts/{script_path}', "/tmp/")
+
+        print(f"✔ Provisioning complete for {name} ({workload})")
+        scp.close()
+        client.close()
+
+    def run_benchmark(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
+        ip = self._get_vm_ip(name)
+        print(f"→ Connecting to {name} @ {ip} to run benchmark...")
+
+        client = self._create_ssh_client(ip, username, key_path)
+        script_path = 'run_redis_vm.sh' if workload == 'redis' else 'run_mongodb_vm.sh'
+
+        stdin, stdout, stderr = client.exec_command(f"bash /tmp/{script_path}")
+        print(stdout.read().decode())
+        print(stderr.read().decode())
+
+        client.close()
 
 
 if __name__ == "__main__":
@@ -247,6 +294,12 @@ if __name__ == "__main__":
     provision_parser.add_argument("--workload", choices=["redis", "mongodb"], default="redis", help="Type of benchmark to run")
 
 
+    run_parser = subparsers.add_parser("run", help="Run benchmark on VM")
+    run_parser.add_argument("name", help="VM name")
+    run_parser.add_argument("--user", default="ubuntu")
+    run_parser.add_argument("--key", default="~/.ssh/id_rsa")
+    run_parser.add_argument("--workload", choices=["redis", "mongodb"], required=True)
+
 
     
     args = parser.parse_args()
@@ -264,18 +317,20 @@ if __name__ == "__main__":
         manager.stop_vm(args.name, args.force)
     elif args.command == "list":
         manager.list_vms()
-    elif args.command == "provision":
-        manager.provision_and_run(args.name, args.user, args.key, args.workload)
-    elif args.command == "create-cloud":
-        manager.create_cloud_vm(
-            args.name, args.memory, args.vcpus,
-            args.disk, args.cloud_image, args.seed_iso
-        )
     elif args.command == "pin":
         vcpu_map = {}
         for mapping in args.mapping.split(","):
             vcpu, pcpu = mapping.split(":")
             vcpu_map[int(vcpu)] = int(pcpu)
         manager.set_vcpu_pinning(args.name, vcpu_map)
+    elif args.command == "create-cloud":
+        manager.create_cloud_vm(
+            args.name, args.memory, args.vcpus,
+            args.disk, args.cloud_image, args.seed_iso
+        )
+    elif args.command == "provision":
+        manager.provision_vm(args.name, args.user, args.key, args.workload)
+    elif args.command == "run":
+        manager.run_benchmark(args.name, args.user, args.key, args.workload)
     else:
         parser.print_help()
