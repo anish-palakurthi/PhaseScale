@@ -18,7 +18,7 @@ class VMManager:
         # Create disk image
         disk_cmd = f"qemu-img create -f qcow2 {disk_path} {disk_size}G"
         subprocess.run(disk_cmd, shell=True, check=True)
-        
+
         # Build virt-install command
         cmd = [
             "virt-install",
@@ -28,57 +28,59 @@ class VMManager:
             "--disk", f"path={disk_path},format=qcow2",
             "--os-variant", "generic",
             "--network", "bridge=virbr0",
-            "--graphics", "none",
         ]
-        
+
         if iso_path:
+            # Use VNC graphics for desktop/live installers
             cmd.extend(["--cdrom", iso_path])
+            cmd.extend(["--graphics", "vnc,listen=0.0.0.0"])  # or use "vnc,listen=127.0.0.1" for localhost-only
         else:
-            # Import an existing cloud image if no ISO provided
+            # Headless import
+            cmd.extend(["--graphics", "none"])
             cmd.extend(["--import"])
-        
+
         print(f"Creating VM {name}...")
         subprocess.run(cmd, check=True)
-    
-    def clone_vm(self, source_name, target_name):
-        """Clone an existing VM"""
-        cmd = f"virt-clone --original {source_name} --name {target_name} --auto-clone"
-        subprocess.run(cmd, shell=True, check=True)
-        print(f"VM {source_name} cloned to {target_name}")
-    
-    def start_vm(self, name):
-        """Start a VM"""
-        cmd = f"virsh start {name}"
-        subprocess.run(cmd, shell=True, check=True)
-        print(f"VM {name} started")
-    
-    def stop_vm(self, name, force=False):
-        """Stop a VM"""
-        if force:
-            cmd = f"virsh destroy {name}"
-        else:
-            cmd = f"virsh shutdown {name}"
-        
-        subprocess.run(cmd, shell=True, check=True)
-        print(f"VM {name} {'destroyed' if force else 'shutdown'}")
-    
-    def list_vms(self):
-        """List all VMs"""
-        cmd = "virsh list --all"
-        subprocess.run(cmd, shell=True, check=True)
-    
-    def set_vcpu_pinning(self, name, vcpu_map):
-        """Set vCPU pinning for a VM"""
-        for vcpu, pcpu in vcpu_map.items():
-            cmd = f"virsh vcpupin {name} {vcpu} {pcpu}"
+
+        def clone_vm(self, source_name, target_name):
+            """Clone an existing VM"""
+            cmd = f"virt-clone --original {source_name} --name {target_name} --auto-clone"
             subprocess.run(cmd, shell=True, check=True)
-            print(f"Pinned vCPU {vcpu} to pCPU {pcpu} for VM {name}")
-    
-    def create_multiple_vms(self, base_name, count, memory, vcpus, disk_size, iso_path=None):
-        """Create multiple VMs with sequential names"""
-        for i in range(count):
-            vm_name = f"{base_name}{i+1}"
-            self.create_vm(vm_name, memory, vcpus, disk_size, iso_path)
+            print(f"VM {source_name} cloned to {target_name}")
+        
+        def start_vm(self, name):
+            """Start a VM"""
+            cmd = f"virsh start {name}"
+            subprocess.run(cmd, shell=True, check=True)
+            print(f"VM {name} started")
+        
+        def stop_vm(self, name, force=False):
+            """Stop a VM"""
+            if force:
+                cmd = f"virsh destroy {name}"
+            else:
+                cmd = f"virsh shutdown {name}"
+            
+            subprocess.run(cmd, shell=True, check=True)
+            print(f"VM {name} {'destroyed' if force else 'shutdown'}")
+        
+        def list_vms(self):
+            """List all VMs"""
+            cmd = "virsh list --all"
+            subprocess.run(cmd, shell=True, check=True)
+        
+        def set_vcpu_pinning(self, name, vcpu_map):
+            """Set vCPU pinning for a VM"""
+            for vcpu, pcpu in vcpu_map.items():
+                cmd = f"virsh vcpupin {name} {vcpu} {pcpu}"
+                subprocess.run(cmd, shell=True, check=True)
+                print(f"Pinned vCPU {vcpu} to pCPU {pcpu} for VM {name}")
+        
+        def create_multiple_vms(self, base_name, count, memory, vcpus, disk_size, iso_path=None):
+            """Create multiple VMs with sequential names"""
+            for i in range(count):
+                vm_name = f"{base_name}{i+1}"
+                self.create_vm(vm_name, memory, vcpus, disk_size, iso_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VM Manager")
@@ -127,9 +129,9 @@ if __name__ == "__main__":
     manager = VMManager()
     
     if args.command == "create":
-        manager.create_vm(args.name, args.memory, args.vcpus, args.disk, args.iso)
+        manager.create_vm(args.name, args.memory, args.vcpus, args.disk, args.cdrom)
     elif args.command == "create-multi":
-        manager.create_multiple_vms(args.basename, args.count, args.memory, args.vcpus, args.disk, args.iso)
+        manager.create_multiple_vms(args.basename, args.count, args.memory, args.vcpus, args.disk, args.cdrom)
     elif args.command == "clone":
         manager.clone_vm(args.source, args.target)
     elif args.command == "start":
