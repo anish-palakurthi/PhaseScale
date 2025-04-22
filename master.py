@@ -45,6 +45,16 @@ def provision_vm(name):
     ], check=True)
     print(f"✅ VM {name} provisioned successfully")
 
+def setup_benchmark(name):
+    print(f"🏃 Setting up benchmark on VM {name}...")
+    subprocess.run([
+        "sudo", "python3", PROVISION_SCRIPT, "setup", name,
+        "--user", SSH_USER,
+        "--key", SSH_KEY,
+        "--workload", "redis"
+    ], check=True)
+    print(f"✅ Benchmark completed for VM {name}")
+
 def run_benchmark(name):
     print(f"🏃 Running benchmark on VM {name}...")
     subprocess.run([
@@ -89,6 +99,10 @@ print("📦 Provisioning VMs...")
 with ThreadPoolExecutor(max_workers=8) as pool:
     pool.map(provision_vm, pin_map.keys())
 
+print("\n Setting up all Redis YCSB benchmarks simultaneously...")
+with ThreadPoolExecutor(max_workers=16) as pool:
+    pool.map(setup_benchmark, pin_map.keys())
+
 # === RUN PHASE ===
 print("\n=== PHASE 4: Benchmark Execution ===")
 print("📡 Starting metrics daemon...")
@@ -96,6 +110,7 @@ metrics_proc = subprocess.Popen([
     "sudo", "python3", METRICS_DAEMON, "--output", "metrics.jsonl"
 ])
 print("✅ Metrics daemon started")
+
 
 print("\n💥 Launching all Redis YCSB benchmarks simultaneously...")
 with ThreadPoolExecutor(max_workers=16) as pool:

@@ -205,6 +205,8 @@ class VMManager:
                 script_path = 'run_mongodb_vm.sh'
 
             scp.put(f'vm_benchmark_scripts/{script_path}', "/tmp/")
+            scp.put(f'vm_benchmark_scripts/setup_redis_vm.sh', "/tmp/")
+
             
 
             print(f"→ Running {workload} benchmark script...")
@@ -227,10 +229,25 @@ class VMManager:
         client.exec_command("sudo mv /tmp/YCSB /opt/")
 
         script_path = 'run_redis_vm.sh' if workload == 'redis' else 'run_mongodb_vm.sh'
+
         scp.put(f'vm_benchmark_scripts/{script_path}', "/tmp/")
+        scp.put(f'vm_benchmark_scripts/setup_redis_vm.sh', "/tmp/")
 
         print(f"✔ Provisioning complete for {name} ({workload})")
         scp.close()
+        client.close()
+
+    def setup_benchmark(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
+        ip = self._get_vm_ip(name)
+        print(f"→ Connecting to {name} @ {ip} to run benchmark...")
+
+        client = self._create_ssh_client(ip, username, key_path)
+        script_path = 'setup_redis_vm.sh' if workload == 'redis' else 'run_mongodb_vm.sh'
+
+        stdin, stdout, stderr = client.exec_command(f"bash /tmp/{script_path}")
+        print(stdout.read().decode())
+        print(stderr.read().decode())
+
         client.close()
 
     def run_benchmark(self, name, username="ubuntu", key_path="~/.ssh/id_rsa", workload="redis"):
@@ -313,6 +330,13 @@ if __name__ == "__main__":
     run_parser.add_argument("--workload", choices=["redis", "mongodb"], required=True)
 
 
+    setup_parser = subparsers.add_parser("setup", help="Setup benchmark on VM")
+    setup_parser.add_argument("name", help="VM name")
+    setup_parser.add_argument("--user", default="ubuntu")
+    setup_parser.add_argument("--key", default="~/.ssh/id_rsa")
+    setup_parser.add_argument("--workload", choices=["redis", "mongodb"], required=True)
+
+
     
     args = parser.parse_args()
     manager = VMManager()
@@ -344,5 +368,7 @@ if __name__ == "__main__":
         manager.provision_vm(args.name, args.user, args.key, args.workload)
     elif args.command == "run":
         manager.run_benchmark(args.name, args.user, args.key, args.workload)
+    elif args.command == "setup":
+        manager.setup_benchmark(args.name, args.user, args.key, args.workload)
     else:
         parser.print_help()
