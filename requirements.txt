@@ -1,3 +1,9 @@
 scp
 paramiko
 psutil
+tensorflow>=2.4.0
+numpy>=1.19.5
+matplotlib>=3.3.4
+pandas>=1.2.4
+h5py>=3.1.0
+scikit-learn>=0.24.2
