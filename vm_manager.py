@@ -255,7 +255,10 @@ class VMManager:
         print(f"→ Connecting to {name} @ {ip} to run benchmark...")
 
         client = self._create_ssh_client(ip, username, key_path)
+        scp = SCPClient(client.get_transport())
+
         script_path = 'run_redis_vm.sh' if workload == 'redis' else 'run_mongodb_vm.sh'
+        scp.put(f'vm_benchmark_scripts/{script_path}', "/tmp/")
 
         stdin, stdout, stderr = client.exec_command(f"bash /tmp/{script_path}")
         print(stdout.read().decode())
