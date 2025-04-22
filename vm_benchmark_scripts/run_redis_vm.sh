@@ -25,10 +25,10 @@ echo "benchmark_start=$START_TS" > "$TIMELOG"
 echo "=== Benchmark START: $(date) ($START_TS) ==="
 
 echo "📊 Starting YCSB load phase..."
-bin/ycsb load redis -s -P workloads/workloada -p redis.host=127.0.0.1 -p operationcount=1000000
+bin/ycsb load redis -s -P workloads/workloada -p redis.host=127.0.0.1 -p operationcount=10000000
 
 echo "📊 Starting YCSB run phase..."
-bin/ycsb run redis -s -P workloads/workloada -p redis.host=127.0.0.1 -p operationcount=1000000
+bin/ycsb run redis -s -P workloads/workloada -p redis.host=127.0.0.1 -p operationcount=10000000
 
 
 END_TS=$(date +%s)
