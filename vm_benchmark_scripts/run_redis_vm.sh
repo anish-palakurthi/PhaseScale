@@ -8,6 +8,8 @@ until command -v redis-server &>/dev/null; do
   sleep 1
 done
 
+echo "🔄 Restarting redis-server..."
+sudo systemctl restart redis-server
 
 # Validate that YCSB is present
 if [ ! -d /opt/YCSB ]; then
