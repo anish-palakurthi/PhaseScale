@@ -7,6 +7,7 @@ import time
 import sys
 import paramiko
 from scp import SCPClient
+import socket
 
 class VMManager:
     def __init__(self, vm_dir="./vms"):
@@ -36,6 +37,8 @@ class VMManager:
             "--os-variant", "ubuntu22.04",
             "--network", "bridge=virbr0",
             "--graphics", "none",
+            "--noautoconsole",
+            "--wait", "0",  # Don't wait for install to complete
             "--import"
         ]
 
@@ -59,6 +62,9 @@ class VMManager:
             "--disk", f"path={disk_path},format=qcow2",
             "--os-variant", "generic",
             "--network", "bridge=virbr0",
+            "--noautoconsole",
+            "--wait", "0",  # Don't wait for install to complete
+            "--import"
         ]
 
         if iso_path:
@@ -119,39 +125,45 @@ class VMManager:
         key = paramiko.RSAKey.from_private_key_file(os.path.expanduser(key_path))
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname, username=username, pkey=key)
-        return client
+        for attempt in range(15):
+            try:
+                client.connect(hostname, username=username, pkey=key, timeout=5)
+                return client
+            except (paramiko.ssh_exception.NoValidConnectionsError, socket.timeout):
+                print(f"⏳ SSH not ready on {hostname}, retrying... ({attempt+1}/15)")
+                time.sleep(2)
 
-    def _get_vm_ip(self, name):
-        import json, re, subprocess
+        raise Exception(f"Failed to connect to SSH on {hostname} after multiple attempts.")
 
-        # 1) Get the domiflist output
+
+    def _get_vm_ip(self, name, retries=15, delay=2):
+        import json, re, time, subprocess
+
+        # Get MAC from domiflist
         result = subprocess.run(
             f"sudo virsh domiflist {name}",
             shell=True, capture_output=True, text=True
         )
         mac = None
-
-        # 2) Find the MAC by looking at the last column of non-header lines
         for line in result.stdout.splitlines():
             line = line.strip()
             if not line or line.startswith("Interface") or line.startswith("-"):
                 continue
             parts = line.split()
-            candidate = parts[-1]
-            if re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", candidate):
-                mac = candidate.lower()
+            if len(parts) >= 5 and re.match(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", parts[-1], re.I):
+                mac = parts[-1].lower()
                 break
-
         if not mac:
             raise Exception(f"MAC address for {name} not found in virsh domiflist output.")
 
-        # 3) Lookup the IP in the lease file
-        with open("/var/lib/libvirt/dnsmasq/virbr0.status") as f:
-            leases = json.load(f)
-        for lease in leases:
-            if lease.get("mac-address", "").lower() == mac:
-                return lease["ip-address"]
+        # Retry until DHCP lease appears
+        for _ in range(retries):
+            with open("/var/lib/libvirt/dnsmasq/virbr0.status") as f:
+                leases = json.load(f)
+            for lease in leases:
+                if lease.get("mac-address", "").lower() == mac:
+                    return lease["ip-address"]
+            time.sleep(delay)
 
         raise Exception(f"No DHCP lease found for MAC {mac}")
 

@@ -8,24 +8,39 @@ users:
     lock_passwd: false
     passwd: "$6$ZciFATx7sep3APAQ$7u/QNZ/Ul4EbmVRkZsMQLOeCcMwrvn832isqnLJ8dgzB.gfGsyCThn8hebuNzK2.3Yox0L8EMfJrokaJ.q76v."
     ssh_authorized_keys:
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC5J891bFt/tyssvUnry1CQpKTR/1iOdm919AJggaz45pAMuzj82/QInewLoi6nqxGUE1MnazIStWWAjL+BkqzxUtuw+OsBHwKUEpYizgeOeqhWuW/Wcq/X9FlF5ZRVb9rz2wfi6O9X97e8/mOy1TiM62CIPgQUALNZRQIwrdgICKe5jjIpM+k1pfCiEkStYA7fVktp4BG7xtzjdVuYfPP4bWB7cdC2tb1EEUCXULoseAZ+vDCJGHtOB9NUbKowbgqfTN3RRX9Qh1cJNEgqeDbOQl+O/R2WAlunAR6GmmPN5sTJyT8wLXkBYlvEvBJ2/5LCbG/6MuxF4avr5KyToOMB5o55C+DvzH6xGC80xysqyhtlsOUDcL5RoUHff1dGnOkYFiHS71Fs1HjIyv3Jhkyqy56vLsy+w9RPmyszcuB+1vOoq0OL7bvqzR6nmOFgJIeSE1lVJyczivZiAo5PZnI7R7/gSSAu+dHJJ1iwftOEAyMOp+4H/VyHYf7DmugNK1/MRXhOyG/I97NvhRdT9wXeipFcoCcXP7VMxImIJJnwahNnezyS0eLM/MqnHuPWRANpw37TdYNXgtaoBwgOo/bChFJozM6H+efISmNUyYOqME3YAtvXrx5UETr60GRMQdcIp6Ytr0pW3voq4jSP0B/GAhnOSYqmI2V8M4aFDOXZjw== anishp@node0.anishp-254401.ldos-ut-pg0.apt.emulab.net
-
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC5J891bFt/tyssvUnry1CQpKTR/1iOdm919AJggaz45pAMuzj82/QInewLoi6nqxGUE1MnazIStWWAjL+BkqzxUtuw+OsBHwKUEpYizgeOeqhWuW/Wcq/X9FlF5ZRVb9rz2wfi6O9X97e8/mOy1TiM62CIPgQUALNZRQIwrdgICKe5jjIpM+k1pfCiEkStYA7fVktp4BG7xtzjdVuYfPP4bWB7cdC2tb1EEUCXULoseAZ+vDCJGHtOB9NUbKowbgqfTN3RRX9Qh1cJNEgqeDbOQl+O/R2WAlunAR6GmmPN5sTJyT8wLXkBYlvEvBJ2/5LCbG/6MuxF4avr5KyToOMB5o55C+DvzH6xGC80xysqyhtlsOUDcL5RoUHff1dGnOkYFiHS71Fs1HjIyv3Jhkyqy56vLsy+w9RPmyszcuB+1vOoq0OL7bvqzR6nmOFgJIeSE1lVJyczivZiAo5PZnI7R7/gSSAu+dHJJ1iwftOEAyMOp+4H/VyHYf7DmugNK1/MRXhOyG/I97NvhRdT9wXeipFcoCcXP7VMxImIJJnwahNnezyS0eLM/MqnHuPWRANpw37TdYNXgtaoBwgOo/bChFJozM6H+efISmNUyYOqME3YAtvXrx5UETr60GRMQdcIp6Ytr0pW3voq4jSP0B/GAhnOSYqmI2V8M4aFDOXZjw== anishp@node0.anishp-254401.ldos-ut-pg0.apt.emulab.net
 
 ssh_pwauth: true
 chpasswd:
   expire: false
 
+# Only the bare essentials here; installing the rest later
 package_update: true
+package_upgrade: true
 packages:
   - qemu-guest-agent
-  - curl
-  - git
-  - maven
+  - python-is-python3   # ensures /usr/bin/python → python3
   - openjdk-11-jdk
-  - python-is-python3
-  - redis-server
-  - mongodb
-
+  - maven
+  - software-properties-common
 
 runcmd:
-  - systemctl enable --now qemu-guest-agent
+  # 1) Enable universe repo
+  - |
+    sudo add-apt-repository universe -y
+
+  # 2) Refresh and install Redis
+  - |
+    sudo apt-get update -y
+  - |
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server
+
+  # 3) Start services
+  - |
+    systemctl enable --now qemu-guest-agent
+  - |
+    systemctl enable --now redis-server
+
+  # 4) Signal done
+  - |
+    echo "✅ cloud-init bootstrap complete at $(date)" > /var/log/bootstrap.log
