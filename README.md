@@ -1,6 +1,6 @@
-# PhaseScale: Predictive DVFS for Virtual Machine Workloads
+# DeepScale: Predictive DVFS for Virtual Machine Workloads
 
-**PhaseScale** is a predictive power management system that uses deep reinforcement learning to dynamically set per-core CPU frequencies based on system-wide VM activity. Unlike traditional DVFS strategies that react to individual core utilization, PhaseScale proactively learns workload patterns across VMs to minimize energy usage while maintaining performance.
+**DeepScale** is a predictive power management system that uses deep reinforcement learning to dynamically set per-core CPU frequencies based on system-wide VM activity. Unlike traditional DVFS strategies that react to individual core utilization, DeepScale proactively learns workload patterns across VMs to minimize energy usage while maintaining performance.
 
 ---
 
